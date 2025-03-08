@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>MAC Address Collector</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      margin: 0;
+      padding: 20px;
+      color: #333;
+      background-color: #f5f5f5;
+      user-select: none;
+    }
+
+    .drag-region {
+      -webkit-app-region: drag;
+      height: 30px;
+      width: 100%;
+      position: absolute;
+      top: 0;
+      left: 0;
+    }
+
+    .container {
+      margin-top: 20px;
+      background-color: white;
+      border-radius: 8px;
+      padding: 20px;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+      max-width: 800px;
+      margin: 40px auto 0;
+    }
+
+    h1 {
+      color: #333;
+      font-size: 24px;
+      margin-bottom: 20px;
+      text-align: center;
+    }
+
+    .info-section {
+      margin-bottom: 20px;
+    }
+
+    .info-section h2 {
+      font-size: 18px;
+      margin-bottom: 10px;
+      color: #555;
+    }
+
+    .info-item {
+      display: flex;
+      padding: 8px 0;
+      border-bottom: 1px solid #eee;
+    }
+
+    .info-label {
+      flex: 0 0 120px;
+      font-weight: bold;
+      color: #666;
+    }
+
+    .info-value {
+      flex: 1;
+      word-break: break-all;
+    }
+
+    .mac-address-item {
+      margin-bottom: 8px;
+      padding: 8px;
+      background-color: #f9f9f9;
+      border-radius: 4px;
+    }
+
+    .mac-interface {
+      font-weight: bold;
+      margin-right: 10px;
+      color: #555;
+    }
+
+    .mac-value {
+      font-family: monospace;
+      color: #008080;
+    }
+
+    .button-container {
+      display: flex;
+      justify-content: center;
+      margin-top: 20px;
+      gap: 10px;
+    }
+
+    button {
+      background-color: #4CAF50;
+      border: none;
+      color: white;
+      padding: 10px 20px;
+      text-align: center;
+      text-decoration: none;
+      display: inline-block;
+      font-size: 16px;
+      margin: 4px 2px;
+      cursor: pointer;
+      border-radius: 4px;
+      transition: background-color 0.3s;
+    }
+
+    button:hover {
+      background-color: #45a049;
+    }
+
+    button:disabled {
+      background-color: #cccccc;
+      cursor: not-allowed;
+    }
+
+    #collectBtn {
+      background-color: #2196F3;
+    }
+
+    #collectBtn:hover {
+      background-color: #0b7dda;
+    }
+
+    #saveBtn {
+      background-color: #4CAF50;
+    }
+
+    #saveBtn:hover {
+      background-color: #45a049;
+    }
+
+    .loading {
+      text-align: center;
+      margin: 20px 0;
+      display: none;
+    }
+
+    .spinner {
+      border: 4px solid rgba(0, 0, 0, 0.1);
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      border-left-color: #09f;
+      animation: spin 1s linear infinite;
+      display: inline-block;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    .status-message {
+      margin-top: 20px;
+      padding: 10px;
+      border-radius: 4px;
+      text-align: center;
+    }
+
+    .status-success {
+      background-color: #d4edda;
+      color: #155724;
+    }
+
+    .status-error {
+      background-color: #f8d7da;
+      color: #721c24;
+    }
+
+    .results-container {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="drag-region"></div>
+
+  <div class="container">
+    <h1>MAC Address Collector</h1>
+
+    <div class="button-container">
+      <button id="collectBtn">Collect System Information</button>
+      <button id="saveBtn" disabled>Save to File</button>
+    </div>
+
+    <div class="loading" id="loading">
+      <div class="spinner"></div>
+      <p>Collecting system information...</p>
+    </div>
+
+    <div id="statusMessage" class="status-message" style="display: none;"></div>
+
+    <div id="resultsContainer" class="results-container">
+      <div class="info-section">
+        <h2>System Information</h2>
+        <div class="info-item">
+          <div class="info-label">Hostname:</div>
+          <div class="info-value" id="hostname"></div>
+        </div>
+        <div class="info-item">
+          <div class="info-label">Platform:</div>
+          <div class="info-value" id="platform"></div>
+        </div>
+        <div class="info-item">
+          <div class="info-label">Architecture:</div>
+          <div class="info-value" id="architecture"></div>
+        </div>
+        <div class="info-item">
+          <div class="info-label">Username:</div>
+          <div class="info-value" id="username"></div>
+        </div>
+      </div>
+
+      <div class="info-section">
+        <h2>System ID</h2>
+        <div class="info-item">
+          <div class="info-value" id="systemId" style="font-family: monospace; word-break: break-all;"></div>
+        </div>
+      </div>
+
+      <div class="info-section">
+        <h2>MAC Addresses</h2>
+        <div id="macAddressesContainer"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const { ipcRenderer } = require('electron');
+
+    let collectedData = null;
+    const collectBtn = document.getElementById('collectBtn');
+    const saveBtn = document.getElementById('saveBtn');
+    const loading = document.getElementById('loading');
+    const statusMessage = document.getElementById('statusMessage');
+    const resultsContainer = document.getElementById('resultsContainer');
+
+    // UI elements
+    const hostnameEl = document.getElementById('hostname');
+    const platformEl = document.getElementById('platform');
+    const architectureEl = document.getElementById('architecture');
+    const usernameEl = document.getElementById('username');
+    const systemIdEl = document.getElementById('systemId');
+    const macAddressesContainer = document.getElementById('macAddressesContainer');
+
+    collectBtn.addEventListener('click', () => {
+      // Clear previous results
+      resultsContainer.style.display = 'none';
+      statusMessage.style.display = 'none';
+      collectBtn.disabled = true;
+      saveBtn.disabled = true;
+      loading.style.display = 'block';
+
+      // Request MAC info collection
+      ipcRenderer.send('collect-mac-info');
+    });
+
+    saveBtn.addEventListener('click', () => {
+      if (!collectedData) return;
+
+      saveBtn.disabled = true;
+      statusMessage.style.display = 'none';
+      loading.style.display = 'block';
+
+      ipcRenderer.send('save-mac-info', collectedData);
+    });
+
+    // Handle MAC info results
+    ipcRenderer.on('mac-info-results', (event, result) => {
+      loading.style.display = 'none';
+      collectBtn.disabled = false;
+
+      if (result.success) {
+        collectedData = {
+          systemInfo: result.systemInfo,
+          systemId: result.systemId,
+          macAddresses: result.macAddresses
+        };
+
+        // Update UI with results
+        hostnameEl.textContent = result.systemInfo.hostname;
+        platformEl.textContent = `${result.systemInfo.platform} ${result.systemInfo.platform_release} ${result.systemInfo.platform_version}`;
+        architectureEl.textContent = result.systemInfo.architecture;
+        usernameEl.textContent = result.systemInfo.username;
+        systemIdEl.textContent = result.systemId;
+
+        // Clear previous MAC addresses
+        macAddressesContainer.innerHTML = '';
+
+        // Add MAC addresses
+        result.macAddresses.forEach((addr, index) => {
+          const macItem = document.createElement('div');
+          macItem.className = 'mac-address-item';
+          macItem.innerHTML = `
+            <span class="mac-interface">${index + 1}. ${addr.interface}:</span>
+            <span class="mac-value">${addr.mac_address}</span>
+          `;
+          macAddressesContainer.appendChild(macItem);
+        });
+
+        // Show results and enable save button
+        resultsContainer.style.display = 'block';
+        saveBtn.disabled = false;
+      } else {
+        showError(`Failed to collect system information: ${result.error}`);
+      }
+    });
+
+    // Handle save result
+    ipcRenderer.on('save-mac-info-result', (event, result) => {
+      loading.style.display = 'none';
+      saveBtn.disabled = false;
+
+      if (result.success) {
+        showSuccess(`File saved successfully to:\n${result.filePath}`);
+      } else {
+        showError(`Failed to save file: ${result.error}`);
+      }
+    });
+
+    function showSuccess(message) {
+      statusMessage.className = 'status-message status-success';
+      statusMessage.textContent = message;
+      statusMessage.style.display = 'block';
+    }
+
+    function showError(message) {
+      statusMessage.className = 'status-message status-error';
+      statusMessage.textContent = message;
+      statusMessage.style.display = 'block';
+    }
+  </script>
+</body>
+</html>
